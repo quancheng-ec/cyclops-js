@@ -1,5 +1,5 @@
 ;(function() {
-  fetch("/api/test")
+  axios.post("/api/test", { a: 1 })
   axios.get("/api/test")
   axios.get("/api/404?a=1", {
     headers: {

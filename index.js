@@ -256,13 +256,6 @@ var js_cookie = createCommonjsModule(function (module, exports) {
 }));
 });
 
-var getUserFromCookie = function getUserFromCookie() {
-  var user = {};['userId', 'companyId', 'pToken'].forEach(function (item) {
-    user[item] = js_cookie.get(item);
-  });
-  return user;
-};
-
 /*
  * author: wendu
  * email: 824783146@qq.com
@@ -375,10 +368,6 @@ function serialize(ctx) {
     }
   };
 }
-
-var generateTraceId = function generateTraceId() {
-  return Math.random().toString(36).slice(2) + new Date().getTime();
-};
 
 var eventemitter3 = createCommonjsModule(function (module) {
 var has = Object.prototype.hasOwnProperty
@@ -717,6 +706,10 @@ EventEmitter.EventEmitter = EventEmitter;
 }
 });
 
+var generateTraceId = function generateTraceId() {
+  return Math.random().toString(36).slice(2) + new Date().getTime();
+};
+
 var classCallCheck = function (instance, Constructor) {
   if (!(instance instanceof Constructor)) {
     throw new TypeError("Cannot call a class as a function");
@@ -788,10 +781,12 @@ var levels = ["error", "debug", "warn"];
 var Logger = function (_EventEmitter) {
   inherits(Logger, _EventEmitter);
 
-  function Logger() {
+  function Logger(conf) {
     classCallCheck(this, Logger);
 
     var _this = possibleConstructorReturn(this, (Logger.__proto__ || Object.getPrototypeOf(Logger)).call(this));
+
+    _this.id = generateTraceId();
 
     levels.forEach(function (type) {
       _this[type] = function (payload) {
@@ -801,6 +796,11 @@ var Logger = function (_EventEmitter) {
 
     _this.on("log", function (e) {
       console.log(e.type + ": ", e.payload);
+      fetch("//localhost:4000/error", {
+        method: "POST",
+        body: JSON.stringify(e.payload),
+        headers: new Headers({ "Content-Type": "application/json" })
+      });
     });
     return _this;
   }
@@ -822,12 +822,6 @@ var Cyclops = function () {
     classCallCheck(this, Cyclops);
 
     this.conf = conf;
-
-    this._baseInfo = {
-      user: getUserFromCookie(),
-      pid: generateTraceId()
-    };
-
     this.logger = new Logger();
   }
 
