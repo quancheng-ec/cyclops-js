@@ -29,8 +29,8 @@ still working
 
 * [x] log xhr error
 
-* [] log fetch error
+* [ ] log fetch error
 
-* [] log bad performance
+* [ ] log bad performance
 
-* [] log adapter
+* [ ] log adapter

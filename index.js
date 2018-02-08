@@ -1,26 +1,30 @@
 (function (global, factory) {
-	typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory(require('parse-headers')) :
-	typeof define === 'function' && define.amd ? define(['parse-headers'], factory) :
-	(global.Cyclops = factory(global.parseHeaders));
-}(this, (function (parseHeaders) { 'use strict';
+	typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
+	typeof define === 'function' && define.amd ? define(factory) :
+	(global.Cyclops = factory());
+}(this, (function () { 'use strict';
 
-parseHeaders = parseHeaders && parseHeaders.hasOwnProperty('default') ? parseHeaders['default'] : parseHeaders;
+var SCRIPT_UNCAUGHT_ERR = "SCRIPT_UNCAUGHT_ERR";
+var ASSETS_LOAD_FAIL = "ASSETS_LOAD_FAIL";
+var XHR_RESPONSE_ERR = "XHR_RESPONSE_ERR";
 
-var watchGlobalError = function watchGlobalError() {
-  var conf = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+var ASSETS_LOAD_SLOW = "ASSETS_LOAD_SLOW";
 
-  window.addEventListener('error', handleError(conf), true);
-  window.addEventListener('unhandledrejection', function (event) {
-    console.warn('WARNING: Unhandled promise rejection. Shame on you! Reason: ' + event.reason);
+var watchGlobalError = function watchGlobalError(logger) {
+  var conf = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
+
+  window.addEventListener("error", handleError(logger, conf), true);
+  window.addEventListener("unhandledrejection", function (event) {
+    console.warn("WARNING: Unhandled promise rejection. Shame on you! Reason: " + event.reason);
   }, true);
-  window.addEventListener('rejectionhandled', function (event) {
-    console.log('REJECTIONHANDLED');
+  window.addEventListener("rejectionhandled", function (event) {
+    console.log("REJECTIONHANDLED");
   });
 };
 
-function handleError(conf) {
+function handleError(logger, conf) {
   return function (e) {
-    console.log('catch error: ', formatError(e));
+    logger.error(formatError(e));
     conf.callback && conf.callback();
     if (conf.prevent) {
       e.preventDefault();
@@ -31,7 +35,7 @@ function handleError(conf) {
 function formatError(errorEvent) {
   if (errorEvent.filename) {
     return {
-      type: 'script',
+      type: SCRIPT_UNCAUGHT_ERR,
       source: errorEvent.filename,
       message: errorEvent.message,
       lineNo: errorEvent.lineno,
@@ -39,25 +43,33 @@ function formatError(errorEvent) {
     };
   }
   return {
-    type: 'assets',
+    type: ASSETS_LOAD_FAIL,
     source: errorEvent.srcElement.src
   };
 }
 
-var calculateLoadTimes = function calculateLoadTimes(conf) {
+var calculateLoadTimes = function calculateLoadTimes(logger) {
+  var conf = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
+
   if (performance === undefined) {
-    console.log('= Calculate Load Times: performance NOT supported');
+    console.log("= Calculate Load Times: performance NOT supported");
     return;
   }
 
-  var resources = performance.getEntriesByType('resource');
+  var resources = performance.getEntriesByType("resource");
 
   if (resources === undefined || resources.length <= 0) {
-    console.log('= Calculate Load Times: there are NO `resource` performance records');
+    console.log("= Calculate Load Times: there are NO `resource` performance records");
     return;
   }
 
-  console.log('resources: ', resources.map(serializeResourceTime));
+  resources.forEach(function (res) {
+    var times = serializeResourceTime(res);
+    if (times.duration >= (conf.max_duration || 10000)) {
+      times.type = ASSETS_LOAD_SLOW;
+      logger.warn(times);
+    }
+  });
 };
 
 function serializeResourceTime(res) {
@@ -66,9 +78,9 @@ function serializeResourceTime(res) {
     redirectTime: res.redirectEnd - res.redirectStart,
     dnsTime: res.domainLookupEnd - res.domainLookupStart,
     tcpHandshakeTime: res.connectEnd - res.connectStart,
-    secureTime: res.secureConnectionStart > 0 ? res.connectEnd - res.secureConnectionStart : '0',
+    secureTime: res.secureConnectionStart > 0 ? res.connectEnd - res.secureConnectionStart : "0",
     responseTime: res.responseEnd - res.responseStart,
-    duration: res.startTime > 0 ? res.responseEnd - res.startTime : '0'
+    duration: res.startTime > 0 ? res.responseEnd - res.startTime : "0"
   };
 }
 
@@ -324,32 +336,33 @@ var ajaxHook = createCommonjsModule(function (module) {
 ajaxhook(module.exports);
 });
 
-var watchAsyncCalls = function watchAsyncCalls(conf) {
-  return ajaxHook.hookAjax({
+var watchAsyncCalls = function watchAsyncCalls(logger) {
+  ajaxHook.hookAjax({
     setRequestHeader: getRequestHeaders,
     send: beforeSend,
     onreadystatechange: handleStateChange
   });
-};
 
-function getRequestHeaders(kvPair) {
-  if (!this._requestHeaders) this._requestHeaders = '';
-  this._requestHeaders += kvPair[0] + ': ' + kvPair[1] + '\n';
-}
-
-function beforeSend(body) {
-  this._requestBody = body;
-  this._cookies = document.cookie;
-}
-
-function handleStateChange(ctx) {
-  if (ctx.readyState === 4 && ctx.status >= 400) {
-    console.log(serialize(ctx));
+  function getRequestHeaders(kvPair) {
+    if (!this._requestHeaders) this._requestHeaders = "";
+    this._requestHeaders += kvPair[0] + ": " + kvPair[1] + "\n";
   }
-}
+
+  function beforeSend(body) {
+    this._requestBody = body;
+    this._cookies = document.cookie;
+  }
+
+  function handleStateChange(ctx) {
+    if (ctx.readyState === 4 && ctx.status >= 400) {
+      logger.log("error", serialize(ctx));
+    }
+  }
+};
 
 function serialize(ctx) {
   return {
+    type: XHR_RESPONSE_ERR,
     status: ctx.status,
     url: ctx.responseURL,
     response: {
@@ -366,6 +379,343 @@ function serialize(ctx) {
 var generateTraceId = function generateTraceId() {
   return Math.random().toString(36).slice(2) + new Date().getTime();
 };
+
+var eventemitter3 = createCommonjsModule(function (module) {
+var has = Object.prototype.hasOwnProperty
+  , prefix = '~';
+
+/**
+ * Constructor to create a storage for our `EE` objects.
+ * An `Events` instance is a plain object whose properties are event names.
+ *
+ * @constructor
+ * @private
+ */
+function Events() {}
+
+//
+// We try to not inherit from `Object.prototype`. In some engines creating an
+// instance in this way is faster than calling `Object.create(null)` directly.
+// If `Object.create(null)` is not supported we prefix the event names with a
+// character to make sure that the built-in object properties are not
+// overridden or used as an attack vector.
+//
+if (Object.create) {
+  Events.prototype = Object.create(null);
+
+  //
+  // This hack is needed because the `__proto__` property is still inherited in
+  // some old browsers like Android 4, iPhone 5.1, Opera 11 and Safari 5.
+  //
+  if (!new Events().__proto__) prefix = false;
+}
+
+/**
+ * Representation of a single event listener.
+ *
+ * @param {Function} fn The listener function.
+ * @param {*} context The context to invoke the listener with.
+ * @param {Boolean} [once=false] Specify if the listener is a one-time listener.
+ * @constructor
+ * @private
+ */
+function EE(fn, context, once) {
+  this.fn = fn;
+  this.context = context;
+  this.once = once || false;
+}
+
+/**
+ * Add a listener for a given event.
+ *
+ * @param {EventEmitter} emitter Reference to the `EventEmitter` instance.
+ * @param {(String|Symbol)} event The event name.
+ * @param {Function} fn The listener function.
+ * @param {*} context The context to invoke the listener with.
+ * @param {Boolean} once Specify if the listener is a one-time listener.
+ * @returns {EventEmitter}
+ * @private
+ */
+function addListener(emitter, event, fn, context, once) {
+  if (typeof fn !== 'function') {
+    throw new TypeError('The listener must be a function');
+  }
+
+  var listener = new EE(fn, context || emitter, once)
+    , evt = prefix ? prefix + event : event;
+
+  if (!emitter._events[evt]) emitter._events[evt] = listener, emitter._eventsCount++;
+  else if (!emitter._events[evt].fn) emitter._events[evt].push(listener);
+  else emitter._events[evt] = [emitter._events[evt], listener];
+
+  return emitter;
+}
+
+/**
+ * Clear event by name.
+ *
+ * @param {EventEmitter} emitter Reference to the `EventEmitter` instance.
+ * @param {(String|Symbol)} evt The Event name.
+ * @private
+ */
+function clearEvent(emitter, evt) {
+  if (--emitter._eventsCount === 0) emitter._events = new Events();
+  else delete emitter._events[evt];
+}
+
+/**
+ * Minimal `EventEmitter` interface that is molded against the Node.js
+ * `EventEmitter` interface.
+ *
+ * @constructor
+ * @public
+ */
+function EventEmitter() {
+  this._events = new Events();
+  this._eventsCount = 0;
+}
+
+/**
+ * Return an array listing the events for which the emitter has registered
+ * listeners.
+ *
+ * @returns {Array}
+ * @public
+ */
+EventEmitter.prototype.eventNames = function eventNames() {
+  var names = []
+    , events
+    , name;
+
+  if (this._eventsCount === 0) return names;
+
+  for (name in (events = this._events)) {
+    if (has.call(events, name)) names.push(prefix ? name.slice(1) : name);
+  }
+
+  if (Object.getOwnPropertySymbols) {
+    return names.concat(Object.getOwnPropertySymbols(events));
+  }
+
+  return names;
+};
+
+/**
+ * Return the listeners registered for a given event.
+ *
+ * @param {(String|Symbol)} event The event name.
+ * @returns {Array} The registered listeners.
+ * @public
+ */
+EventEmitter.prototype.listeners = function listeners(event) {
+  var evt = prefix ? prefix + event : event
+    , handlers = this._events[evt];
+
+  if (!handlers) return [];
+  if (handlers.fn) return [handlers.fn];
+
+  for (var i = 0, l = handlers.length, ee = new Array(l); i < l; i++) {
+    ee[i] = handlers[i].fn;
+  }
+
+  return ee;
+};
+
+/**
+ * Return the number of listeners listening to a given event.
+ *
+ * @param {(String|Symbol)} event The event name.
+ * @returns {Number} The number of listeners.
+ * @public
+ */
+EventEmitter.prototype.listenerCount = function listenerCount(event) {
+  var evt = prefix ? prefix + event : event
+    , listeners = this._events[evt];
+
+  if (!listeners) return 0;
+  if (listeners.fn) return 1;
+  return listeners.length;
+};
+
+/**
+ * Calls each of the listeners registered for a given event.
+ *
+ * @param {(String|Symbol)} event The event name.
+ * @returns {Boolean} `true` if the event had listeners, else `false`.
+ * @public
+ */
+EventEmitter.prototype.emit = function emit(event, a1, a2, a3, a4, a5) {
+  var evt = prefix ? prefix + event : event;
+
+  if (!this._events[evt]) return false;
+
+  var listeners = this._events[evt]
+    , len = arguments.length
+    , args
+    , i;
+
+  if (listeners.fn) {
+    if (listeners.once) this.removeListener(event, listeners.fn, undefined, true);
+
+    switch (len) {
+      case 1: return listeners.fn.call(listeners.context), true;
+      case 2: return listeners.fn.call(listeners.context, a1), true;
+      case 3: return listeners.fn.call(listeners.context, a1, a2), true;
+      case 4: return listeners.fn.call(listeners.context, a1, a2, a3), true;
+      case 5: return listeners.fn.call(listeners.context, a1, a2, a3, a4), true;
+      case 6: return listeners.fn.call(listeners.context, a1, a2, a3, a4, a5), true;
+    }
+
+    for (i = 1, args = new Array(len -1); i < len; i++) {
+      args[i - 1] = arguments[i];
+    }
+
+    listeners.fn.apply(listeners.context, args);
+  } else {
+    var length = listeners.length
+      , j;
+
+    for (i = 0; i < length; i++) {
+      if (listeners[i].once) this.removeListener(event, listeners[i].fn, undefined, true);
+
+      switch (len) {
+        case 1: listeners[i].fn.call(listeners[i].context); break;
+        case 2: listeners[i].fn.call(listeners[i].context, a1); break;
+        case 3: listeners[i].fn.call(listeners[i].context, a1, a2); break;
+        case 4: listeners[i].fn.call(listeners[i].context, a1, a2, a3); break;
+        default:
+          if (!args) for (j = 1, args = new Array(len -1); j < len; j++) {
+            args[j - 1] = arguments[j];
+          }
+
+          listeners[i].fn.apply(listeners[i].context, args);
+      }
+    }
+  }
+
+  return true;
+};
+
+/**
+ * Add a listener for a given event.
+ *
+ * @param {(String|Symbol)} event The event name.
+ * @param {Function} fn The listener function.
+ * @param {*} [context=this] The context to invoke the listener with.
+ * @returns {EventEmitter} `this`.
+ * @public
+ */
+EventEmitter.prototype.on = function on(event, fn, context) {
+  return addListener(this, event, fn, context, false);
+};
+
+/**
+ * Add a one-time listener for a given event.
+ *
+ * @param {(String|Symbol)} event The event name.
+ * @param {Function} fn The listener function.
+ * @param {*} [context=this] The context to invoke the listener with.
+ * @returns {EventEmitter} `this`.
+ * @public
+ */
+EventEmitter.prototype.once = function once(event, fn, context) {
+  return addListener(this, event, fn, context, true);
+};
+
+/**
+ * Remove the listeners of a given event.
+ *
+ * @param {(String|Symbol)} event The event name.
+ * @param {Function} fn Only remove the listeners that match this function.
+ * @param {*} context Only remove the listeners that have this context.
+ * @param {Boolean} once Only remove one-time listeners.
+ * @returns {EventEmitter} `this`.
+ * @public
+ */
+EventEmitter.prototype.removeListener = function removeListener(event, fn, context, once) {
+  var evt = prefix ? prefix + event : event;
+
+  if (!this._events[evt]) return this;
+  if (!fn) {
+    clearEvent(this, evt);
+    return this;
+  }
+
+  var listeners = this._events[evt];
+
+  if (listeners.fn) {
+    if (
+      listeners.fn === fn &&
+      (!once || listeners.once) &&
+      (!context || listeners.context === context)
+    ) {
+      clearEvent(this, evt);
+    }
+  } else {
+    for (var i = 0, events = [], length = listeners.length; i < length; i++) {
+      if (
+        listeners[i].fn !== fn ||
+        (once && !listeners[i].once) ||
+        (context && listeners[i].context !== context)
+      ) {
+        events.push(listeners[i]);
+      }
+    }
+
+    //
+    // Reset the array, or remove it completely if we have no more listeners.
+    //
+    if (events.length) this._events[evt] = events.length === 1 ? events[0] : events;
+    else clearEvent(this, evt);
+  }
+
+  return this;
+};
+
+/**
+ * Remove all listeners, or those of the specified event.
+ *
+ * @param {(String|Symbol)} [event] The event name.
+ * @returns {EventEmitter} `this`.
+ * @public
+ */
+EventEmitter.prototype.removeAllListeners = function removeAllListeners(event) {
+  var evt;
+
+  if (event) {
+    evt = prefix ? prefix + event : event;
+    if (this._events[evt]) clearEvent(this, evt);
+  } else {
+    this._events = new Events();
+    this._eventsCount = 0;
+  }
+
+  return this;
+};
+
+//
+// Alias methods names because people roll like that.
+//
+EventEmitter.prototype.off = EventEmitter.prototype.removeListener;
+EventEmitter.prototype.addListener = EventEmitter.prototype.on;
+
+//
+// Expose the prefix.
+//
+EventEmitter.prefixed = prefix;
+
+//
+// Allow `EventEmitter` to be imported as module namespace.
+//
+EventEmitter.EventEmitter = EventEmitter;
+
+//
+// Expose the module.
+//
+{
+  module.exports = EventEmitter;
+}
+});
 
 var classCallCheck = function (instance, Constructor) {
   if (!(instance instanceof Constructor)) {
@@ -391,26 +741,109 @@ var createClass = function () {
   };
 }();
 
+
+
+
+
+
+
+
+
+var inherits = function (subClass, superClass) {
+  if (typeof superClass !== "function" && superClass !== null) {
+    throw new TypeError("Super expression must either be null or a function, not " + typeof superClass);
+  }
+
+  subClass.prototype = Object.create(superClass && superClass.prototype, {
+    constructor: {
+      value: subClass,
+      enumerable: false,
+      writable: true,
+      configurable: true
+    }
+  });
+  if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass;
+};
+
+
+
+
+
+
+
+
+
+
+
+var possibleConstructorReturn = function (self, call) {
+  if (!self) {
+    throw new ReferenceError("this hasn't been initialised - super() hasn't been called");
+  }
+
+  return call && (typeof call === "object" || typeof call === "function") ? call : self;
+};
+
+var levels = ["error", "debug", "warn"];
+
+var Logger = function (_EventEmitter) {
+  inherits(Logger, _EventEmitter);
+
+  function Logger() {
+    classCallCheck(this, Logger);
+
+    var _this = possibleConstructorReturn(this, (Logger.__proto__ || Object.getPrototypeOf(Logger)).call(this));
+
+    levels.forEach(function (type) {
+      _this[type] = function (payload) {
+        return _this.log(type, payload);
+      };
+    });
+
+    _this.on("log", function (e) {
+      console.log(e.type + ": ", e.payload);
+    });
+    return _this;
+  }
+
+  createClass(Logger, [{
+    key: "log",
+    value: function log(type, payload) {
+      this.emit("log", {
+        type: type,
+        payload: payload
+      });
+    }
+  }]);
+  return Logger;
+}(eventemitter3);
+
 var Cyclops = function () {
   function Cyclops(conf) {
     classCallCheck(this, Cyclops);
 
     this.conf = conf;
+
     this._baseInfo = {
       user: getUserFromCookie(),
-      traceId: generateTraceId()
+      pid: generateTraceId()
     };
+
+    this.logger = new Logger();
   }
 
   createClass(Cyclops, [{
-    key: 'send',
-    value: function send(level) {}
+    key: "send",
+    value: function send() {}
   }, {
-    key: 'start',
+    key: "start",
     value: function start() {
-      watchAsyncCalls(this.conf);
-      watchGlobalError(this.conf.errorHandler);
-      window.onload = calculateLoadTimes;
+      var _this = this;
+
+      watchAsyncCalls(this.logger, this.conf);
+      watchGlobalError(this.logger, this.conf.errorHandler);
+      window.onload = function () {
+        return calculateLoadTimes(_this.logger, _this.conf.performance);
+      };
     }
   }]);
   return Cyclops;

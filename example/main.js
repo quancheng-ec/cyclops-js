@@ -1,13 +1,13 @@
 ;(function() {
-  fetch('/api/test')
-  axios.get('/api/test')
-  axios.get('/api/404?a=1', {
+  fetch("/api/test")
+  axios.get("/api/test")
+  axios.get("/api/404?a=1", {
     headers: {
       a: 1
     }
   })
   axios.post(
-    '/api/404',
+    "/api/404",
     {
       a: 1,
       b: 2,

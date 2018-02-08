@@ -12,8 +12,8 @@
       var c = new Cyclops({
         host: "10.42.86.38",
         port: "5000",
-        errorHandler: {
-          prevent: true
+        performance: {
+          max_duration: 5000
         }
       })
       c.start()
