@@ -31,6 +31,8 @@ still working
 
 * [ ] log fetch error
 
-* [ ] log bad performance
+* [x] log bad performance
 
-* [ ] log adapter
+* [x] log adapter (console)
+
+* [ ] log adapter (remote)
