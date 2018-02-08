@@ -11,14 +11,19 @@
     <script>
       var c = new Cyclops({
         host: "10.42.86.38",
-        port: "5000"
+        port: "5000",
+        errorHandler: {
+          prevent: true
+        }
       })
       c.start()
     </script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
   </head>
 
   <body>
     <img src="https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_120x44dp.png" alt="">
+    <img src="/aaa.jpg" alt="">
     <script src="./main.js"></script>
   </body>
 

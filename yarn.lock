@@ -34,6 +34,10 @@ agent-base@2:
     extend "~3.0.0"
     semver "~5.0.1"
 
+ajax-hook@^1.8.0:
+  version "1.8.0"
+  resolved "https://registry.yarnpkg.com/ajax-hook/-/ajax-hook-1.8.0.tgz#b12c87dff04f3e176d992c1600bc20fdb24e57c4"
+
 ajv@^5.1.0:
   version "5.5.2"
   resolved "https://registry.yarnpkg.com/ajv/-/ajv-5.5.2.tgz#73b5eeca3fab653e3d3f9422b341ad42205dc965"

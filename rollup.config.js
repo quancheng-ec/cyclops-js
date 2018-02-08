@@ -10,7 +10,8 @@ module.exports = {
   output: {
     file: 'index.js',
     format: 'umd',
-    name: 'Cyclops'
+    name: 'Cyclops',
+    sourcemap: true
   },
   plugins: [
     json(),

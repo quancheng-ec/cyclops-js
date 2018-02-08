@@ -1,22 +1,50 @@
 (function (global, factory) {
-	typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
-	typeof define === 'function' && define.amd ? define(factory) :
-	(global.Cyclops = factory());
-}(this, (function () { 'use strict';
+	typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory(require('parse-headers')) :
+	typeof define === 'function' && define.amd ? define(['parse-headers'], factory) :
+	(global.Cyclops = factory(global.parseHeaders));
+}(this, (function (parseHeaders) { 'use strict';
 
-var onGlobalError = function onGlobalError(message, source, line, col, error) {
-  if (error) {
-    console.log({
-      type: error.name,
-      message: error.message,
-      source: source,
-      line: line,
-      col: col
-    });
-  }
+parseHeaders = parseHeaders && parseHeaders.hasOwnProperty('default') ? parseHeaders['default'] : parseHeaders;
+
+var watchGlobalError = function watchGlobalError() {
+  var conf = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+
+  window.addEventListener('error', handleError(conf), true);
+  window.addEventListener('unhandledrejection', function (event) {
+    console.warn('WARNING: Unhandled promise rejection. Shame on you! Reason: ' + event.reason);
+  }, true);
+  window.addEventListener('rejectionhandled', function (event) {
+    console.log('REJECTIONHANDLED');
+  });
 };
 
-var calculateLoadTimes = function calculateLoadTimes() {
+function handleError(conf) {
+  return function (e) {
+    console.log('catch error: ', formatError(e));
+    conf.callback && conf.callback();
+    if (conf.prevent) {
+      e.preventDefault();
+    }
+  };
+}
+
+function formatError(errorEvent) {
+  if (errorEvent.filename) {
+    return {
+      type: 'script',
+      source: errorEvent.filename,
+      message: errorEvent.message,
+      lineNo: errorEvent.lineno,
+      colNo: errorEvent.colno
+    };
+  }
+  return {
+    type: 'assets',
+    source: errorEvent.srcElement.src
+  };
+}
+
+var calculateLoadTimes = function calculateLoadTimes(conf) {
   if (performance === undefined) {
     console.log('= Calculate Load Times: performance NOT supported');
     return;
@@ -29,39 +57,20 @@ var calculateLoadTimes = function calculateLoadTimes() {
     return;
   }
 
-  var _iteratorNormalCompletion = true;
-  var _didIteratorError = false;
-  var _iteratorError = undefined;
-
-  try {
-    for (var _iterator = resources[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-      var res = _step.value;
-
-      console.log({
-        name: res.name,
-        redirectTime: res.redirectEnd - res.redirectStart,
-        dnsTime: res.domainLookupEnd - res.domainLookupStart,
-        tcpHandshakeTime: res.connectEnd - res.connectStart,
-        secureTime: res.secureConnectionStart > 0 ? res.connectEnd - res.secureConnectionStart : '0',
-        responseTime: res.responseEnd - res.responseStart,
-        duration: res.startTime > 0 ? res.responseEnd - res.startTime : '0'
-      });
-    }
-  } catch (err) {
-    _didIteratorError = true;
-    _iteratorError = err;
-  } finally {
-    try {
-      if (!_iteratorNormalCompletion && _iterator.return) {
-        _iterator.return();
-      }
-    } finally {
-      if (_didIteratorError) {
-        throw _iteratorError;
-      }
-    }
-  }
+  console.log('resources: ', resources.map(serializeResourceTime));
 };
+
+function serializeResourceTime(res) {
+  return {
+    name: res.name,
+    redirectTime: res.redirectEnd - res.redirectStart,
+    dnsTime: res.domainLookupEnd - res.domainLookupStart,
+    tcpHandshakeTime: res.connectEnd - res.connectStart,
+    secureTime: res.secureConnectionStart > 0 ? res.connectEnd - res.secureConnectionStart : '0',
+    responseTime: res.responseEnd - res.responseStart,
+    duration: res.startTime > 0 ? res.responseEnd - res.startTime : '0'
+  };
+}
 
 function createCommonjsModule(fn, module) {
 	return module = { exports: {} }, fn(module, module.exports), module.exports;
@@ -242,20 +251,120 @@ var getUserFromCookie = function getUserFromCookie() {
   return user;
 };
 
-var addInterruptor = function addInterruptor(callback) {
-  if (XMLHttpRequest.callbacks) {
-    XMLHttpRequest.callbacks.push(callback);
-  } else {
-    XMLHttpRequest.callbacks = [callback];
-    var oldSend = XMLHttpRequest.prototype.send;
+/*
+ * author: wendu
+ * email: 824783146@qq.com
+ * source code: https://github.com/wendux/Ajax-hook
+ **/
+var ajaxhook=function (ob) {
+    ob.hookAjax = function (funs) {
+        window._ahrealxhr = window._ahrealxhr || XMLHttpRequest;
+        XMLHttpRequest = function () {
+            this.xhr = new window._ahrealxhr;
+            for (var attr in this.xhr) {
+                var type = "";
+                try {
+                    type = typeof this.xhr[attr];
+                } catch (e) {}
+                if (type === "function") {
+                    this[attr] = hookfun(attr);
+                } else {
+                    Object.defineProperty(this, attr, {
+                        get: getFactory(attr),
+                        set: setFactory(attr)
+                    });
+                }
+            }
+        };
 
-    XMLHttpRequest.prototype.send = function () {
-      for (var i = 0; i < XMLHttpRequest.callbacks.length; i++) {
-        XMLHttpRequest.callbacks[i](this);
-      }
-      oldSend.apply(this, arguments);
+        function getFactory(attr) {
+            return function () {
+                return this.hasOwnProperty(attr + "_")?this[attr + "_"]:this.xhr[attr];
+            }
+        }
+
+        function setFactory(attr) {
+            return function (f) {
+                var xhr = this.xhr;
+                var that = this;
+                if (attr.indexOf("on") != 0) {
+                    this[attr + "_"] = f;
+                    return;
+                }
+                if (funs[attr]) {
+                    xhr[attr] = function () {
+                        funs[attr](that) || f.apply(xhr, arguments);
+                    };
+                } else {
+                    xhr[attr] = f;
+                }
+            }
+        }
+
+        function hookfun(fun) {
+            return function () {
+                var args = [].slice.call(arguments);
+                if (funs[fun] && funs[fun].call(this, args, this.xhr)) {
+                    return;
+                }
+                return this.xhr[fun].apply(this.xhr, args);
+            }
+        }
+        return window._ahrealxhr;
     };
+    ob.unHookAjax = function () {
+        if (window._ahrealxhr)  XMLHttpRequest = window._ahrealxhr;
+        window._ahrealxhr = undefined;
+    };
+    //for typescript
+    ob.default=ob;
+};
+
+var ajaxHook = createCommonjsModule(function (module) {
+ajaxhook(module.exports);
+});
+
+var watchAsyncCalls = function watchAsyncCalls(conf) {
+  return ajaxHook.hookAjax({
+    setRequestHeader: getRequestHeaders,
+    send: beforeSend,
+    onreadystatechange: handleStateChange
+  });
+};
+
+function getRequestHeaders(kvPair) {
+  if (!this._requestHeaders) this._requestHeaders = '';
+  this._requestHeaders += kvPair[0] + ': ' + kvPair[1] + '\n';
+}
+
+function beforeSend(body) {
+  this._requestBody = body;
+  this._cookies = document.cookie;
+}
+
+function handleStateChange(ctx) {
+  if (ctx.readyState === 4 && ctx.status >= 400) {
+    console.log(serialize(ctx));
   }
+}
+
+function serialize(ctx) {
+  return {
+    status: ctx.status,
+    url: ctx.responseURL,
+    response: {
+      headers: ctx.getAllResponseHeaders()
+    },
+    request: {
+      headers: ctx._requestHeaders,
+      body: ctx._requestBody[0],
+      cookies: ctx._cookies
+    }
+  };
+}
+
+var generateTraceId = function generateTraceId() {
+  return Math.random().toString(36).slice(2) + new Date().getTime();
 };
 
 var classCallCheck = function (instance, Constructor) {
@@ -286,9 +395,11 @@ var Cyclops = function () {
   function Cyclops(conf) {
     classCallCheck(this, Cyclops);
 
-    this.user = getUserFromCookie();
     this.conf = conf;
-    this.traceId = Math.random().toString(36).slice(2) + new Date().getTime();
+    this._baseInfo = {
+      user: getUserFromCookie(),
+      traceId: generateTraceId()
+    };
   }
 
   createClass(Cyclops, [{
@@ -297,14 +408,9 @@ var Cyclops = function () {
   }, {
     key: 'start',
     value: function start() {
-      addInterruptor(function (e) {
-        return console.log(e);
-      });
-      window.onerror = onGlobalError;
+      watchAsyncCalls(this.conf);
+      watchGlobalError(this.conf.errorHandler);
       window.onload = calculateLoadTimes;
-      window.addEventListener('error', function (e) {
-        e.preventDefault();
-      });
     }
   }]);
   return Cyclops;
@@ -313,3 +419,4 @@ var Cyclops = function () {
 return Cyclops;
 
 })));
+//# sourceMappingURL=index.js.map
