@@ -7,15 +7,19 @@
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <title>Document</title>
     <link href="https://cdn.mdn.mozilla.net/static/build/styles/mdn.5e883c91cc88.css" rel="stylesheet" type="text/css">
-    <script src="../dist/bundle.js"></script>
+    <script src="../index.js"></script>
+    <script>
+      var c = new Cyclops({
+        host: "10.42.86.38",
+        port: "5000"
+      })
+      c.start()
+    </script>
   </head>
 
   <body>
     <img src="https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_120x44dp.png" alt="">
-    <script>
-      var c = new Cyclops()
-      c.start()
-    </script>
+    <script src="./main.js"></script>
   </body>
 
 </html>
