@@ -4,11 +4,163 @@
 	(global.Cyclops = factory());
 }(this, (function () { 'use strict';
 
-var SCRIPT_UNCAUGHT_ERR = "SCRIPT_UNCAUGHT_ERR";
-var ASSETS_LOAD_FAIL = "ASSETS_LOAD_FAIL";
-var XHR_RESPONSE_ERR = "XHR_RESPONSE_ERR";
+var ASSETS_LOAD_FAIL = "AssetsLoadFail";
+var XHR_RESPONSE_ERR = "XhrResponseError";
 
-var ASSETS_LOAD_SLOW = "ASSETS_LOAD_SLOW";
+var ASSETS_LOAD_SLOW = "AssetsLoadSlow";
+
+var classCallCheck = function (instance, Constructor) {
+  if (!(instance instanceof Constructor)) {
+    throw new TypeError("Cannot call a class as a function");
+  }
+};
+
+var createClass = function () {
+  function defineProperties(target, props) {
+    for (var i = 0; i < props.length; i++) {
+      var descriptor = props[i];
+      descriptor.enumerable = descriptor.enumerable || false;
+      descriptor.configurable = true;
+      if ("value" in descriptor) descriptor.writable = true;
+      Object.defineProperty(target, descriptor.key, descriptor);
+    }
+  }
+
+  return function (Constructor, protoProps, staticProps) {
+    if (protoProps) defineProperties(Constructor.prototype, protoProps);
+    if (staticProps) defineProperties(Constructor, staticProps);
+    return Constructor;
+  };
+}();
+
+
+
+
+
+
+
+
+
+var inherits = function (subClass, superClass) {
+  if (typeof superClass !== "function" && superClass !== null) {
+    throw new TypeError("Super expression must either be null or a function, not " + typeof superClass);
+  }
+
+  subClass.prototype = Object.create(superClass && superClass.prototype, {
+    constructor: {
+      value: subClass,
+      enumerable: false,
+      writable: true,
+      configurable: true
+    }
+  });
+  if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass;
+};
+
+
+
+
+
+
+
+
+
+
+
+var possibleConstructorReturn = function (self, call) {
+  if (!self) {
+    throw new ReferenceError("this hasn't been initialised - super() hasn't been called");
+  }
+
+  return call && (typeof call === "object" || typeof call === "function") ? call : self;
+};
+
+
+
+
+
+var slicedToArray = function () {
+  function sliceIterator(arr, i) {
+    var _arr = [];
+    var _n = true;
+    var _d = false;
+    var _e = undefined;
+
+    try {
+      for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) {
+        _arr.push(_s.value);
+
+        if (i && _arr.length === i) break;
+      }
+    } catch (err) {
+      _d = true;
+      _e = err;
+    } finally {
+      try {
+        if (!_n && _i["return"]) _i["return"]();
+      } finally {
+        if (_d) throw _e;
+      }
+    }
+
+    return _arr;
+  }
+
+  return function (arr, i) {
+    if (Array.isArray(arr)) {
+      return arr;
+    } else if (Symbol.iterator in Object(arr)) {
+      return sliceIterator(arr, i);
+    } else {
+      throw new TypeError("Invalid attempt to destructure non-iterable instance");
+    }
+  };
+}();
+
+var LogEvent = function LogEvent(src, type, extra) {
+  classCallCheck(this, LogEvent);
+
+  this.fileName = src;
+  this.message = src;
+  this.name = type;
+  this.type = type;
+  this.extra = extra;
+};
+
+var AssetsLog = function (_LogEvent) {
+  inherits(AssetsLog, _LogEvent);
+
+  function AssetsLog(e) {
+    classCallCheck(this, AssetsLog);
+
+    var _this = possibleConstructorReturn(this, (AssetsLog.__proto__ || Object.getPrototypeOf(AssetsLog)).call(this, e.source, e.type, e));
+
+    _this.logger = "assets";
+    _this.message = "LOAD FAIL: " + e.source;
+    return _this;
+  }
+
+  return AssetsLog;
+}(LogEvent);
+
+var XhrLog = function (_LogEvent2) {
+  inherits(XhrLog, _LogEvent2);
+
+  function XhrLog(e) {
+    classCallCheck(this, XhrLog);
+
+    var _this2 = possibleConstructorReturn(this, (XhrLog.__proto__ || Object.getPrototypeOf(XhrLog)).call(this, e.url, e.type, e));
+
+    _this2.logger = "xhr";
+    _this2.message = e.method + " " + e.status + ": " + e.url;
+    _this2.tags = {
+      status: e.status
+    };
+    return _this2;
+  }
+
+  return XhrLog;
+}(LogEvent);
 
 var watchGlobalError = function watchGlobalError(logger) {
   var conf = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
@@ -34,18 +186,20 @@ function handleError(logger, conf) {
 
 function formatError(errorEvent) {
   if (errorEvent.filename) {
-    return {
-      type: SCRIPT_UNCAUGHT_ERR,
-      source: errorEvent.filename,
-      message: errorEvent.message,
-      lineNo: errorEvent.lineno,
-      colNo: errorEvent.colno
-    };
+    // return {
+    //   type: ErrorTypes.SCRIPT_UNCAUGHT_ERR,
+    //   source: errorEvent.filename,
+    //   message: errorEvent.message,
+    //   lineNo: errorEvent.lineno,
+    //   colNo: errorEvent.colno
+    // }
+    return null;
   }
-  return {
+  return new AssetsLog({
     type: ASSETS_LOAD_FAIL,
-    source: errorEvent.srcElement.src
-  };
+    source: errorEvent.srcElement.src,
+    node: errorEvent.srcElement.nodeName
+  });
 }
 
 var calculateLoadTimes = function calculateLoadTimes(logger) {
@@ -67,7 +221,7 @@ var calculateLoadTimes = function calculateLoadTimes(logger) {
     var times = serializeResourceTime(res);
     if (times.duration >= (conf.max_duration || 10000)) {
       times.type = ASSETS_LOAD_SLOW;
-      logger.warn(times);
+      logger.warning(times);
     }
   });
 };
@@ -333,9 +487,15 @@ var watchAsyncCalls = function watchAsyncCalls(logger) {
   ajaxHook.hookAjax({
     setRequestHeader: getRequestHeaders,
     send: beforeSend,
+    open: beforeOpen,
     onreadystatechange: handleStateChange
   });
+  function beforeOpen(_ref) {
+    var _ref2 = slicedToArray(_ref, 1),
+        method = _ref2[0];
 
+    this._method = method;
+  }
   function getRequestHeaders(kvPair) {
     if (!this._requestHeaders) this._requestHeaders = "";
     this._requestHeaders += kvPair[0] + ": " + kvPair[1] + "\n";
@@ -348,7 +508,7 @@ var watchAsyncCalls = function watchAsyncCalls(logger) {
 
   function handleStateChange(ctx) {
     if (ctx.readyState === 4 && ctx.status >= 400) {
-      logger.log("error", serialize(ctx));
+      logger.log("error", new XhrLog(serialize(ctx)));
     }
   }
 };
@@ -358,6 +518,7 @@ function serialize(ctx) {
     type: XHR_RESPONSE_ERR,
     status: ctx.status,
     url: ctx.responseURL,
+    method: ctx._method,
     response: {
       headers: ctx.getAllResponseHeaders()
     },
@@ -710,73 +871,7 @@ var generateTraceId = function generateTraceId() {
   return Math.random().toString(36).slice(2) + new Date().getTime();
 };
 
-var classCallCheck = function (instance, Constructor) {
-  if (!(instance instanceof Constructor)) {
-    throw new TypeError("Cannot call a class as a function");
-  }
-};
-
-var createClass = function () {
-  function defineProperties(target, props) {
-    for (var i = 0; i < props.length; i++) {
-      var descriptor = props[i];
-      descriptor.enumerable = descriptor.enumerable || false;
-      descriptor.configurable = true;
-      if ("value" in descriptor) descriptor.writable = true;
-      Object.defineProperty(target, descriptor.key, descriptor);
-    }
-  }
-
-  return function (Constructor, protoProps, staticProps) {
-    if (protoProps) defineProperties(Constructor.prototype, protoProps);
-    if (staticProps) defineProperties(Constructor, staticProps);
-    return Constructor;
-  };
-}();
-
-
-
-
-
-
-
-
-
-var inherits = function (subClass, superClass) {
-  if (typeof superClass !== "function" && superClass !== null) {
-    throw new TypeError("Super expression must either be null or a function, not " + typeof superClass);
-  }
-
-  subClass.prototype = Object.create(superClass && superClass.prototype, {
-    constructor: {
-      value: subClass,
-      enumerable: false,
-      writable: true,
-      configurable: true
-    }
-  });
-  if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass;
-};
-
-
-
-
-
-
-
-
-
-
-
-var possibleConstructorReturn = function (self, call) {
-  if (!self) {
-    throw new ReferenceError("this hasn't been initialised - super() hasn't been called");
-  }
-
-  return call && (typeof call === "object" || typeof call === "function") ? call : self;
-};
-
-var levels = ["error", "debug", "warn"];
+var levels = ["error", "debug", "warning"];
 
 var Logger = function (_EventEmitter) {
   inherits(Logger, _EventEmitter);
@@ -795,12 +890,35 @@ var Logger = function (_EventEmitter) {
     });
 
     _this.on("log", function (e) {
-      console.log(e.type + ": ", e.payload);
-      fetch("//localhost:4000/error", {
-        method: "POST",
-        body: JSON.stringify(e.payload),
-        headers: new Headers({ "Content-Type": "application/json" })
+      if (!e.payload) return;
+      var _e$payload = e.payload,
+          type = _e$payload.type,
+          extra = _e$payload.extra,
+          logger = _e$payload.logger,
+          tags = _e$payload.tags,
+          fileName = _e$payload.fileName;
+
+      Raven.captureMessage(e.payload.message, {
+        tags: Object.assign({
+          url: fileName,
+          category: type
+        }, tags),
+        logger: logger,
+        level: e.type,
+        extra: extra
       });
+      // Raven.captureMessage(e.payload.type, {
+      //   tags: {
+      //     category: e.payload.type
+      //   },
+      //   level: e.type,
+      //   extra: e.payload
+      // })
+      // fetch("//localhost:4000/error", {
+      //   method: "POST",
+      //   body: JSON.stringify(e.payload),
+      //   headers: new Headers({ "Content-Type": "application/json", "X-Error-Type": e.payload.type })
+      // })
     });
     return _this;
   }

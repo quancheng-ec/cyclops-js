@@ -9,8 +9,10 @@
   "dependencies": {
     "ajax-hook": "^1.8.0",
     "eventemitter3": "^3.0.1",
-    "js-cookie": "^2.2.0",
-    "log4js": "^2.5.2"
+    "js-cookie": "^2.2.0"
+  },
+  "peerDependencies": {
+    "raven-js": "^3.22.2"
   },
   "engines": {
     "node": ">= 8.0"
